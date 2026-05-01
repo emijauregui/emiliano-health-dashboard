@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStrava } from '../hooks/useStrava'
 
 const COLORS = {
@@ -15,15 +15,26 @@ const TYPOGRAPHY = {
 }
 
 export default function Callback() {
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { exchangeToken } = useStrava()
   const [status, setStatus] = useState('Processing...')
   const [error, setError] = useState(null)
+  const hasExchanged = useRef(false)
 
   useEffect(() => {
-    const code = searchParams.get('code')
-    const errorParam = searchParams.get('error')
+    // Prevent multiple calls (especially in React StrictMode)
+    if (hasExchanged.current) {
+      console.log('Token exchange already attempted, skipping...')
+      return
+    }
+    hasExchanged.current = true
+
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const errorParam = params.get('error')
+    const scope = params.get('scope')
+
+    console.log('Callback URL params:', { code, errorParam, scope })
 
     if (errorParam) {
       setError('Authorization denied')
@@ -32,25 +43,28 @@ export default function Callback() {
     }
 
     if (!code) {
+      console.error('No code in URL. Current URL:', window.location.href)
       setError('No authorization code received')
       setTimeout(() => navigate('/'), 3000)
       return
     }
 
-    const handleCallback = async () => {
+    const handleCallback = async (authCode) => {
       try {
+        console.log('Exchanging code (ONCE):', authCode)
         setStatus('Exchanging authorization code...')
-        await exchangeToken(code)
+        await exchangeToken(authCode)
         setStatus('Connected successfully! Redirecting...')
         setTimeout(() => navigate('/'), 1500)
       } catch (err) {
+        console.error('Token exchange error:', err)
         setError(err.message || 'Failed to connect to Strava')
         setTimeout(() => navigate('/'), 3000)
       }
     }
 
-    handleCallback()
-  }, [searchParams, exchangeToken, navigate])
+    handleCallback(code)
+  }, [])
 
   return (
     <div style={{
